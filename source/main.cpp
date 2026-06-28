@@ -27,8 +27,8 @@ int16_t* audioBufferPool;
 std::string path;
 std::unique_ptr<openmpt::module> mod = nullptr;
 
-C2D_TextBuf statusTextBuffer, songTextBuffer, staticTextBuffer, positionBuffer;
-C2D_Text statusText, songNameText, positionText;
+C2D_TextBuf pathTextBuffer, statusTextBuffer, staticTextBuffer, positionBuffer;
+C2D_Text pathText, statusText, positionText;
 
 std::vector<FileEntry> fileList;
 int selectedFileIndex = 0;
@@ -126,11 +126,11 @@ int main(int argc, char* argv[]) {
 
 	romfsInit();
 
-	statusTextBuffer = C2D_TextBufNew(256);
+	pathTextBuffer = C2D_TextBufNew(256);
 	positionBuffer = C2D_TextBufNew(256);
 	staticTextBuffer = C2D_TextBufNew(4096);
 	fileBrowserBox = C2D_TextBufNew(16384);
-	songTextBuffer = C2D_TextBufNew(256);
+	statusTextBuffer = C2D_TextBufNew(256);
 
 	topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
 	bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
@@ -157,10 +157,12 @@ int main(int argc, char* argv[]) {
 	waveBuf[1].nsamples   = BUFFER_SAMPLES;
 
 	C2D_TextBufClear(staticTextBuffer);
+	C2D_TextBufClear(pathTextBuffer);
 	C2D_TextBufClear(statusTextBuffer);
-	C2D_TextBufClear(songTextBuffer);
 
-	C2D_TextParse(&statusText, statusTextBuffer, currentPath.string().c_str());
+	C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
+
+	C2D_TextParse(&statusText, statusTextBuffer, "Idle");
 
 	populateFileList();
 
@@ -183,8 +185,8 @@ int main(int argc, char* argv[]) {
 
 			if (selectedFileIndex < scrollOffset) {
 				scrollOffset = selectedFileIndex;
-			} else if (selectedFileIndex >= scrollOffset + 15) {
-				scrollOffset = selectedFileIndex - 14;
+			} else if (selectedFileIndex >= scrollOffset + 14) {
+				scrollOffset = selectedFileIndex - 13;
 			}
 
 			if (kDown & KEY_A) {
@@ -199,10 +201,10 @@ int main(int argc, char* argv[]) {
 						selectedFileIndex = 0;
 					}
 
-					C2D_TextBufClear(statusTextBuffer);
-					C2D_TextParse(&statusText, statusTextBuffer, currentPath.string().c_str());
+					C2D_TextBufClear(pathTextBuffer);
+					C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
 				} else {
-					std::string targetTrack = currentPath.string() + fileList[selectedFileIndex].name;
+					std::string targetTrack = currentPath.string() + "/" + fileList[selectedFileIndex].name;
 					std::ifstream file(targetTrack, std::ios::binary);
 					if (file.is_open()) {
 						ndspChnReset(hardwareChannel);
@@ -214,14 +216,21 @@ int main(int argc, char* argv[]) {
 							std::string titleStr = mod->get_metadata("title");
 							if (titleStr.empty()) titleStr = "Untitled Track";
 
-							C2D_TextBufClear(songTextBuffer);
-							C2D_TextParse(&songNameText, songTextBuffer, titleStr.c_str());
+							std::string status = "> ";
+
+							status += titleStr;
+
+							C2D_TextBufClear(statusTextBuffer);
+							C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
 
 							isPaused = false;
 						} catch (...) {
-							C2D_TextBufClear(songTextBuffer);
-							C2D_TextParse(&songNameText, songTextBuffer, "Invalid file");
+							C2D_TextBufClear(statusTextBuffer);
+							C2D_TextParse(&statusText, statusTextBuffer, "Invalid file");
 						}
+					} else {
+						C2D_TextBufClear(statusTextBuffer);
+						C2D_TextParse(&statusText, statusTextBuffer, "Couldn't open file");
 					}
 				}
 			}
@@ -231,6 +240,16 @@ int main(int argc, char* argv[]) {
 			if (kDown & KEY_B) {
 				isPaused = !isPaused;
 				ndspChnSetPaused(hardwareChannel, isPaused);
+
+				std::string status = isPaused ? "|| " : "> ";
+
+				std::string titleStr = mod->get_metadata("title");
+				if (titleStr.empty()) titleStr = "Untitled Track";
+
+				status += titleStr;
+
+				C2D_TextBufClear(statusTextBuffer);
+				C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
 			}
 
 			if (kDown & KEY_DLEFT) {
@@ -279,8 +298,7 @@ int main(int argc, char* argv[]) {
 			C2D_DrawText(&positionText, C2D_WithColor, 300.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
 		}
 
-		C2D_DrawText(&songNameText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
-		C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 215.0f, 0.6f, 0.5f, 0.5f, textColor);
+		C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
 
 		C2D_TargetClear(bottomTarget, C2D_Color32(64, 64, 64, 255));
 		C2D_SceneBegin(bottomTarget);
@@ -288,7 +306,7 @@ int main(int argc, char* argv[]) {
 		float startX = 12.0f;
 		float startY = 12.0f;
 		float spacing = 14.0f;
-		int maxVisibleItems = 15;
+		int maxVisibleItems = 14;
 
 		for (int i = 0; i < maxVisibleItems; i++) {
 			int itemIndex = scrollOffset + i;
@@ -306,6 +324,8 @@ int main(int argc, char* argv[]) {
 
 			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX, currentY, 0.5f, 0.45f, 0.45f, color);
 		}
+
+		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 215.0f, 0.6f, 0.5f, 0.5f, textColor);
 
 		C3D_FrameEnd(0);
 	}
