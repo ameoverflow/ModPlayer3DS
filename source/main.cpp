@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
 					C2D_TextBufClear(pathTextBuffer);
 					C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
 				} else {
-					std::string targetTrack = currentPath.string() + "/" + fileList[selectedFileIndex].name;
+					std::filesystem::path targetTrack = currentPath / fileList[selectedFileIndex].name;
 					std::ifstream file(targetTrack, std::ios::binary);
 					if (file.is_open()) {
 						ndspChnReset(hardwareChannel);
