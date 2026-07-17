@@ -237,7 +237,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		if (mod) {
-			if (kDown & KEY_B) {
+			if (kDown & KEY_B && mod->get_position_seconds() < mod->get_duration_seconds()) {
 				isPaused = !isPaused;
 				ndspChnSetPaused(hardwareChannel, isPaused);
 
@@ -271,6 +271,12 @@ int main(int argc, char* argv[]) {
 					ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
 					ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
 				}
+				if (mod->get_position_seconds() >= mod->get_duration_seconds()) {
+					ndspChnReset(hardwareChannel);
+					ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
+					ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
+					isPaused = true;
+				}
 
 				DSP_FlushDataCache(waveBuf[currentBufferIndex].data_vaddr, BUFFER_SIZE * sizeof(int16_t));
 				ndspChnWaveBufAdd(hardwareChannel, &waveBuf[currentBufferIndex]);
@@ -291,11 +297,15 @@ int main(int argc, char* argv[]) {
 			C2D_TextBufClear(positionBuffer);
 
 			double currentSecs = mod->get_position_seconds();
-			int mins = (int)currentSecs / 60;
-			int secs = (int)currentSecs % 60;
-			std::string posStr = "Time: " + std::to_string(mins) + ":" + (secs < 10 ? "0" : "") + std::to_string(secs);
+			double durationSecs = mod->get_duration_seconds();
+			int curMins = (int)currentSecs / 60;
+			int curSecs = (int)currentSecs % 60;
+			int durMins = (int)durationSecs / 60;
+			int durSecs = (int)durationSecs % 60;
+			std::string posStr = "Time: " + std::to_string(curMins) + ":" + (curSecs < 10 ? "0" : "") + std::to_string(curSecs);
+			posStr += " / " + std::to_string(durMins) + ":" + (durSecs < 10 ? "0" : "") + std::to_string(durSecs);
 			C2D_TextParse(&positionText, positionBuffer, posStr.c_str());
-			C2D_DrawText(&positionText, C2D_WithColor, 300.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
+			C2D_DrawText(&positionText, C2D_WithColor, 275.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
 		}
 
 		C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
