@@ -118,6 +118,8 @@ void drawCaptureWaveform(float alphaVal) {
 }
 
 int main(int argc, char* argv[]) {
+	osSetSpeedupEnable(true);
+
 	gfxInitDefault();
 	gfxSet3D(false);
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
