@@ -19,10 +19,15 @@ ndspWaveBuf waveBuf[2];
 int hardwareChannel = 0;
 u64 lastTime = 0;
 
-C2D_TextBuf statusTextBuffer, positionBuffer;
-C2D_Text statusText, positionText;
+C2D_TextBuf statusTextBuffer;
+C2D_Text statusText;
 std::unique_ptr<openmpt::module> mod = nullptr;
 int currentBufferIndex = 0;
+
+std::string message = "";
+u64 messageShown;
+
+int interpolation = 2;
 
 double Playback::GetPosition() { return mod ? mod->get_position_seconds() : 0; }
 double Playback::GetDuration() { return mod ? mod->get_duration_seconds() : 0; }
@@ -91,20 +96,10 @@ void Playback::Init() {
     waveBuf[1].data_vaddr = &audioBufferPool[BUFFER_SIZE];
     waveBuf[1].nsamples   = BUFFER_SAMPLES;
 
-    positionBuffer = C2D_TextBufNew(256); // position
     statusTextBuffer = C2D_TextBufNew(256);
 
     C2D_TextBufClear(statusTextBuffer);
-    C2D_TextBufClear(positionBuffer);
     C2D_TextParse(&statusText, statusTextBuffer, "Idle");
-}
-
-void UpdateStatus() {
-    std::string status = isPaused ? "|| " : "> ";
-    status += songTitle;
-
-    C2D_TextBufClear(statusTextBuffer);
-    C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
 }
 
 void Playback::PlayFile(std::string path) {
@@ -122,7 +117,13 @@ void Playback::PlayFile(std::string path) {
 
             mod->set_repeat_count(-1);
 
-            UpdateStatus();
+            bool isNew3DS = false;
+            if (R_SUCCEEDED(APT_CheckNew3DS(&isNew3DS)) && isNew3DS) {
+                SetInterpolation(4);
+            } else {
+                SetInterpolation(2);
+            }
+
         } catch (...) {
             C2D_TextBufClear(statusTextBuffer);
             C2D_TextParse(&statusText, statusTextBuffer, "Invalid file");
@@ -136,8 +137,6 @@ void Playback::PlayFile(std::string path) {
 void Playback::Pause() {
     isPaused = !isPaused;
     ndspChnSetPaused(hardwareChannel, isPaused);
-
-    UpdateStatus();
 }
 
 void Playback::Forward() {
@@ -148,6 +147,20 @@ void Playback::Forward() {
 void Playback::Backward() {
     double currentPos = mod->get_position_seconds();
     mod->set_position_seconds(std::max(0.0, currentPos - 5.0));
+}
+
+void ShowMessage(std::string msg) {
+    message = msg;
+    messageShown = osGetTime();
+}
+
+void Playback::SetInterpolation(int interpolation) {
+    mod->set_render_param(openmpt::module::render_param::RENDER_INTERPOLATIONFILTER_LENGTH, interpolation);
+    ShowMessage("Interpolation: " + std::to_string(interpolation));
+}
+
+int Playback::GetInterpolation() {
+    return mod->get_render_param(openmpt::module::render_param::RENDER_INTERPOLATIONFILTER_LENGTH);
 }
 
 void Playback::Update() {
@@ -168,17 +181,25 @@ void Playback::Update() {
     }
 
     if (osGetTime() - lastTime >= 500) {
-        C2D_TextBufClear(positionBuffer);
+        C2D_TextBufClear(statusTextBuffer);
         double currentSecs = std::fmod(mod->get_position_seconds(), mod->get_duration_seconds());
         double durationSecs = mod->get_duration_seconds();
         int curMins = (int)currentSecs / 60;
         int curSecs = (int)currentSecs % 60;
         int durMins = (int)durationSecs / 60;
         int durSecs = (int)durationSecs % 60;
-        std::string posStr = "Time: " + std::to_string(curMins) + ":" + (curSecs < 10 ? "0" : "") + std::to_string(curSecs);
-        posStr += " / " + std::to_string(durMins) + ":" + (durSecs < 10 ? "0" : "") + std::to_string(durSecs);
-        posStr += "\nPattern / row: " + std::to_string(mod->get_current_pattern()) + " / " + std::to_string(mod->get_current_row());
-        C2D_TextParse(&positionText, positionBuffer, posStr.c_str());
+
+        std::string status = isPaused ? "|| " : "> ";
+        status += songTitle;
+        status += "\nTime: " + std::to_string(curMins) + ":" + (curSecs < 10 ? "0" : "") + std::to_string(curSecs);
+        status += " / " + std::to_string(durMins) + ":" + (durSecs < 10 ? "0" : "") + std::to_string(durSecs);
+        status += "\nPattern / row: " + std::to_string(mod->get_current_pattern()) + " / " + std::to_string(mod->get_current_row());
+        status += "\n" + message;
+        C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
+    }
+
+    if (osGetTime() - messageShown >= 3000 && !message.empty()) {
+        message = "";
     }
 }
 
@@ -186,7 +207,6 @@ void Playback::Draw() {
     u32 textColor = C2D_Color32(255, 255, 255, 255);
     if (mod && audioBufferPool != nullptr) {
         DrawWaveform(1.0f);
-        C2D_DrawText(&positionText, C2D_WithColor, 10.0f, 26.0f, 0.6f, 0.5f, 0.5f, textColor);
     }
 
     C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);

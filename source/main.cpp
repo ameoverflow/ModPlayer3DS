@@ -155,6 +155,24 @@ int main(int argc, char* argv[]) {
 				Playback::Forward();
 			}
 
+			if (kDown & KEY_L) {
+				int interpolation = Playback::GetInterpolation();
+				switch (interpolation) {
+					case 8:
+						Playback::SetInterpolation(1);
+						break;
+					case 1:
+						Playback::SetInterpolation(2);
+						break;
+					case 2:
+						Playback::SetInterpolation(4);
+						break;
+					case 4:
+						Playback::SetInterpolation(8);
+						break;
+				}
+			}
+
 			Playback::Update();
 		}
 

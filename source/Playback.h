@@ -22,6 +22,8 @@ namespace Playback {
     void Backward();
     void Draw();
     void DrawWaveform(float alphaVal);
+    void SetInterpolation(int interpolation);
+    int GetInterpolation();
     double GetPosition();
     double GetDuration();
     bool IsModLoaded();
