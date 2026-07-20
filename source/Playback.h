@@ -7,9 +7,8 @@
 
 // audio config
 #define SAMPLE_RATE 48000
-#define BUFFER_SAMPLES 2048
-#define STREAM_CHANNELS 2
-#define BUFFER_SIZE (BUFFER_SAMPLES * STREAM_CHANNELS)
+#define BUFFER_SAMPLES 3072
+#define BUFFER_SIZE (BUFFER_SAMPLES * 2)
 
 #include <string>
 
@@ -21,7 +20,6 @@ namespace Playback {
     void Forward();
     void Backward();
     void Draw();
-    void DrawWaveform(float alphaVal);
     void SetInterpolation(int interpolation);
     int GetInterpolation();
     double GetPosition();

@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
 				color = C2D_Color32(192, 255, 0, 255);
 				C2D_DrawRectSolid(startX - 8.0f, currentY + 6.0f, 0.5f, 4.0f, 4.0f, color);
 			} else {
-				color = fileList[i].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
+				color = fileList[itemIndex].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
 			}
 
 			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX, currentY, 0.5f, 0.45f, 0.45f, color);

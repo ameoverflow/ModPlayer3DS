@@ -27,57 +27,64 @@ int currentBufferIndex = 0;
 std::string message = "";
 u64 messageShown;
 
-int interpolation = 2;
-
 double Playback::GetPosition() { return mod ? mod->get_position_seconds() : 0; }
 double Playback::GetDuration() { return mod ? mod->get_duration_seconds() : 0; }
 bool Playback::IsModLoaded() { return mod != nullptr; }
 
-void Playback::DrawWaveform(float alphaVal) {
-    if (audioBufferPool == nullptr) return;
-    if (alphaVal <= 0.0f) return;
+int setInterpolation = 4;
 
-    int16_t* pcmData = audioBufferPool;
+void DrawWaveform(float alphaVal) {
+    if (audioBufferPool == nullptr || alphaVal <= 0.0f) return;
 
-    int maxSafeElements = BUFFER_SIZE * 2;
+    int16_t* pcmData = &audioBufferPool[currentBufferIndex * BUFFER_SIZE];
+    int totalElements = BUFFER_SAMPLES * 2;
 
-    float prevX = 0.0f;
-    float prevY = 120.0f;
-    int step = 4;
+    const int screenWidth = 400;
+    const float centerY = 120.0f;
 
     u32 lineColor = C2D_Color32(192, 255, 0, (u8)(178.0f * alphaVal));
     u32 shadowColor = C2D_Color32(0, 0, 0, (u8)(255.0f * alphaVal));
 
-    for (int x = 0; x <= 400; x += 8) {
-        int targetIndex = x * step;
+    int elementsPerPixel = totalElements / screenWidth;
+    if (elementsPerPixel < 2) elementsPerPixel = 2;
 
-        if (targetIndex >= maxSafeElements || targetIndex < 0) {
-            break;
+    for (int x = 0; x < screenWidth; x += 2) {
+        int startIdx = x * elementsPerPixel;
+        int endIdx = startIdx + (elementsPerPixel * 2);
+
+        if (startIdx >= totalElements) break;
+        if (endIdx > totalElements) endIdx = totalElements;
+
+        int16_t minVal = 32767;
+        int16_t maxVal = -32768;
+
+        for (int i = startIdx; i < endIdx - 1; i += 2) {
+            int16_t monoSample = (pcmData[i] + pcmData[i + 1]) >> 1;
+
+            if (monoSample > maxVal) maxVal = monoSample;
+            if (monoSample < minVal) minVal = monoSample;
         }
 
-        int16_t sample = pcmData[targetIndex] + pcmData[targetIndex + 1] + pcmData[targetIndex + 2] + pcmData[targetIndex + 3];
-        sample /= 4;
-        float normalized = (float)sample / 32768.0f;
+        float topY = centerY + (float)(minVal >> 9);
+        float bottomY = centerY + (float)(maxVal >> 9);
 
-        float currentY = 120.0f + (normalized * 80.0f);
+        if (topY < 0.0f)   topY = 0.0f;
+        if (bottomY > 240.0f) bottomY = 240.0f;
+
         float currentX = (float)x;
 
-        if (x > 0) {
-            if (currentY >= 0.0f && currentY <= 240.0f && prevY >= 0.0f && prevY <= 240.0f) {
-                C2D_DrawLine(
-                    prevX, prevY, shadowColor,
-                    currentX, currentY + 3.0f, shadowColor,
-                    2.0f, 0.5f
-                );
-                C2D_DrawLine(
-                    prevX, prevY, lineColor,
-                    currentX, currentY, lineColor,
-                    2.0f, 0.5f
-                );
-            }
-        }
-        prevX = currentX;
-        prevY = currentY;
+        // Render drop shadow column line first
+        C2D_DrawLine(
+            currentX, topY, shadowColor,
+            currentX, bottomY + 2.0f, shadowColor,
+            2.0f, 0.5f
+        );
+
+        C2D_DrawLine(
+            currentX, topY, lineColor,
+            currentX, bottomY, lineColor,
+            2.0f, 0.5f
+        );
     }
 }
 
@@ -116,13 +123,8 @@ void Playback::PlayFile(std::string path) {
             songTitle = titleStr;
 
             mod->set_repeat_count(-1);
-
-            bool isNew3DS = false;
-            if (R_SUCCEEDED(APT_CheckNew3DS(&isNew3DS)) && isNew3DS) {
-                SetInterpolation(4);
-            } else {
-                SetInterpolation(2);
-            }
+            mod->set_render_param(openmpt::module::render_param::RENDER_INTERPOLATIONFILTER_LENGTH, setInterpolation);
+            isPaused = false;
 
         } catch (...) {
             C2D_TextBufClear(statusTextBuffer);
@@ -157,6 +159,7 @@ void ShowMessage(std::string msg) {
 void Playback::SetInterpolation(int interpolation) {
     mod->set_render_param(openmpt::module::render_param::RENDER_INTERPOLATIONFILTER_LENGTH, interpolation);
     ShowMessage("Interpolation: " + std::to_string(interpolation));
+    setInterpolation = interpolation;
 }
 
 int Playback::GetInterpolation() {
@@ -180,7 +183,9 @@ void Playback::Update() {
         currentBufferIndex = !currentBufferIndex;
     }
 
-    if (osGetTime() - lastTime >= 500) {
+    u64 currentTime = osGetTime();
+    if (currentTime - lastTime >= 100) {
+        lastTime = currentTime;
         C2D_TextBufClear(statusTextBuffer);
         double currentSecs = std::fmod(mod->get_position_seconds(), mod->get_duration_seconds());
         double durationSecs = mod->get_duration_seconds();
@@ -198,7 +203,7 @@ void Playback::Update() {
         C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
     }
 
-    if (osGetTime() - messageShown >= 3000 && !message.empty()) {
+    if (currentTime - messageShown >= 3000 && !message.empty()) {
         message = "";
     }
 }
