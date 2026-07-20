@@ -20,8 +20,6 @@ namespace Playback {
     void Pause();
     void Forward();
     void Backward();
-    void Stop();
-    void Repeat();
     void Draw();
     void DrawWaveform(float alphaVal);
     double GetPosition();

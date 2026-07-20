@@ -155,25 +155,19 @@ int main(int argc, char* argv[]) {
 				Playback::Forward();
 			}
 
-			if (kDown & KEY_X) {
-				Playback::Repeat();
-			}
-
 			Playback::Update();
 		}
-
-		gspWaitForVBlank();
 
 		u32 textColor = C2D_Color32(255, 255, 255, 255);
 
 		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
-		C2D_TargetClear(topTarget, C2D_Color32(64, 64, 64, 255));
+		C2D_TargetClear(topTarget, C2D_Color32(32, 32, 32, 255));
 		C2D_SceneBegin(topTarget);
 
 		Playback::Draw();
 
-		C2D_TargetClear(bottomTarget, C2D_Color32(64, 64, 64, 255));
+		C2D_TargetClear(bottomTarget, C2D_Color32(32, 32, 32, 255));
 		C2D_SceneBegin(bottomTarget);
 
 		float startX = 12.0f;
@@ -190,9 +184,9 @@ int main(int argc, char* argv[]) {
 			u32 color;
 			if (itemIndex == selectedFileIndex) {
 				color = C2D_Color32(192, 255, 0, 255);
-				C2D_DrawRectSolid(startX - 8.0f, currentY + 4.0f, 0.5f, 4.0f, 4.0f, color);
+				C2D_DrawRectSolid(startX - 8.0f, currentY + 6.0f, 0.5f, 4.0f, 4.0f, color);
 			} else {
-				color = C2D_Color32(255, 255, 255, 255);
+				color = fileList[i].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
 			}
 
 			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX, currentY, 0.5f, 0.45f, 0.45f, color);

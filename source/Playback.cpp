@@ -9,9 +9,10 @@
 #include <string>
 #include <citro2d.h>
 #include "libopenmpt/libopenmpt.hpp"
+#include <3ds.h>
 
 std::string songTitle;
-bool isPaused, repeat;
+bool isPaused;
 
 int16_t* audioBufferPool;
 ndspWaveBuf waveBuf[2];
@@ -19,7 +20,7 @@ int hardwareChannel = 0;
 u64 lastTime = 0;
 
 C2D_TextBuf statusTextBuffer, positionBuffer;
-C2D_Text statusText, positionText, patternRowText;
+C2D_Text statusText, positionText;
 std::unique_ptr<openmpt::module> mod = nullptr;
 int currentBufferIndex = 0;
 
@@ -37,19 +38,20 @@ void Playback::DrawWaveform(float alphaVal) {
 
     float prevX = 0.0f;
     float prevY = 120.0f;
-    int step = 1;
+    int step = 4;
 
     u32 lineColor = C2D_Color32(192, 255, 0, (u8)(178.0f * alphaVal));
     u32 shadowColor = C2D_Color32(0, 0, 0, (u8)(255.0f * alphaVal));
 
-    for (int x = 0; x < 400; x += 2) {
+    for (int x = 0; x <= 400; x += 8) {
         int targetIndex = x * step;
 
         if (targetIndex >= maxSafeElements || targetIndex < 0) {
             break;
         }
 
-        int16_t sample = pcmData[targetIndex];
+        int16_t sample = pcmData[targetIndex] + pcmData[targetIndex + 1] + pcmData[targetIndex + 2] + pcmData[targetIndex + 3];
+        sample /= 4;
         float normalized = (float)sample / 32768.0f;
 
         float currentY = 120.0f + (normalized * 80.0f);
@@ -99,7 +101,6 @@ void Playback::Init() {
 
 void UpdateStatus() {
     std::string status = isPaused ? "|| " : "> ";
-    if (repeat) status += "[R] ";
     status += songTitle;
 
     C2D_TextBufClear(statusTextBuffer);
@@ -119,8 +120,7 @@ void Playback::PlayFile(std::string path) {
             if (titleStr.empty()) titleStr = "Untitled Track";
             songTitle = titleStr;
 
-            isPaused = false;
-            repeat = true;
+            mod->set_repeat_count(-1);
 
             UpdateStatus();
         } catch (...) {
@@ -140,14 +140,6 @@ void Playback::Pause() {
     UpdateStatus();
 }
 
-void Playback::Repeat() {
-    repeat = !repeat;
-
-    mod->set_repeat_count(repeat ? -1 : 0);
-
-    UpdateStatus();
-}
-
 void Playback::Forward() {
     double currentPos = mod->get_position_seconds();
     mod->set_position_seconds(std::max(0.0, currentPos + 5.0));
@@ -163,20 +155,11 @@ void Playback::Update() {
         int16_t* interleavedDest = waveBuf[currentBufferIndex].data_pcm16;
         size_t framesRead = mod->read_interleaved_stereo(SAMPLE_RATE, BUFFER_SAMPLES, interleavedDest);
 
-        if (framesRead == 0) {
+        if (framesRead == 0 && mod->get_repeat_count() == 0) {
             ndspChnReset(hardwareChannel);
             ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
             ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
-        }
-        if (mod->get_position_seconds() >= mod->get_duration_seconds()) {
-            if (repeat) {
-                mod->set_position_seconds(0);
-            } else {
-                ndspChnReset(hardwareChannel);
-                ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
-                ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
-                if (!isPaused) Pause();
-            }
+            Pause();
         }
 
         DSP_FlushDataCache(waveBuf[currentBufferIndex].data_vaddr, BUFFER_SIZE * sizeof(int16_t));
@@ -186,7 +169,7 @@ void Playback::Update() {
 
     if (osGetTime() - lastTime >= 500) {
         C2D_TextBufClear(positionBuffer);
-        double currentSecs = mod->get_position_seconds();
+        double currentSecs = std::fmod(mod->get_position_seconds(), mod->get_duration_seconds());
         double durationSecs = mod->get_duration_seconds();
         int curMins = (int)currentSecs / 60;
         int curSecs = (int)currentSecs % 60;
@@ -194,10 +177,8 @@ void Playback::Update() {
         int durSecs = (int)durationSecs % 60;
         std::string posStr = "Time: " + std::to_string(curMins) + ":" + (curSecs < 10 ? "0" : "") + std::to_string(curSecs);
         posStr += " / " + std::to_string(durMins) + ":" + (durSecs < 10 ? "0" : "") + std::to_string(durSecs);
+        posStr += "\nPattern / row: " + std::to_string(mod->get_current_pattern()) + " / " + std::to_string(mod->get_current_row());
         C2D_TextParse(&positionText, positionBuffer, posStr.c_str());
-
-        std::string patternText = "Pattern / row: " + std::to_string(mod->get_current_pattern()) + " / " + std::to_string(mod->get_current_row());
-        C2D_TextParse(&patternRowText, positionBuffer, patternText.c_str());
     }
 }
 
@@ -206,7 +187,6 @@ void Playback::Draw() {
     if (mod && audioBufferPool != nullptr) {
         DrawWaveform(1.0f);
         C2D_DrawText(&positionText, C2D_WithColor, 10.0f, 26.0f, 0.6f, 0.5f, 0.5f, textColor);
-        C2D_DrawText(&patternRowText, C2D_WithColor, 10.0f, 42.0f, 0.6f, 0.5f, 0.5f, textColor);
     }
 
     C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
