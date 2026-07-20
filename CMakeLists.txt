@@ -22,6 +22,7 @@ set(APP_ICON "${DEVKITPRO}/libctru/default_icon.png")
 
 set(SOURCES
         source/main.cpp
+        source/Playback.cpp
 )
 
 add_executable(ModPlayer3DS ${SOURCES})
@@ -54,8 +55,8 @@ target_link_options(ModPlayer3DS PRIVATE
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(ModPlayer3DS PRIVATE -O2)
-    target_link_options(ModPlayer3DS PRIVATE -s -O2)
+    target_compile_options(ModPlayer3DS PRIVATE -O3)
+    target_link_options(ModPlayer3DS PRIVATE -O3)
 else()
     target_compile_options(ModPlayer3DS PRIVATE -g3 -O0)
     target_link_options(ModPlayer3DS PRIVATE -g3 -O0 -Wl,-Map,${TARGET}.map)

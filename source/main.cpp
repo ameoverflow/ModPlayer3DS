@@ -6,14 +6,9 @@
 #include <string>
 #include <libopenmpt/libopenmpt.hpp>
 #include <citro2d.h>
-#include <cstring>
 #include <dirent.h>
 
-// audio config
-#define SAMPLE_RATE 48000
-#define BUFFER_SAMPLES 2048
-#define STREAM_CHANNELS 2
-#define BUFFER_SIZE (BUFFER_SAMPLES * STREAM_CHANNELS)
+#include "Playback.h"
 
 struct FileEntry {
 	bool isDir;
@@ -22,13 +17,11 @@ struct FileEntry {
 
 C3D_RenderTarget* topTarget;
 C3D_RenderTarget* bottomTarget;
-int16_t* audioBufferPool;
 
 std::string path;
-std::unique_ptr<openmpt::module> mod = nullptr;
 
-C2D_TextBuf pathTextBuffer, statusTextBuffer, staticTextBuffer, positionBuffer;
-C2D_Text pathText, statusText, positionText;
+C2D_TextBuf pathTextBuffer;
+C2D_Text pathText;
 
 std::vector<FileEntry> fileList;
 int selectedFileIndex = 0;
@@ -37,8 +30,6 @@ int scrollOffset = 0;
 C2D_TextBuf fileBrowserBox;
 std::vector<C2D_Text> fileTexts;
 std::filesystem::path currentPath = "/";
-
-bool isPaused = false;
 
 void populateFileList() {
 	fileList.clear();
@@ -51,7 +42,17 @@ void populateFileList() {
 
 	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(currentPath.string())) {
 		if (std::filesystem::is_regular_file(entry.status())) {
-			if (entry.path().extension() == ".mod" || entry.path().extension() == ".xm" || entry.path().extension() == ".mptm" || entry.path().extension() == ".s3m" || entry.path().extension() == ".it") {
+			std::string ext = entry.path().extension().string();
+
+			if (!ext.empty() && ext[0] == '.') {
+				ext = ext.substr(1);
+			}
+
+			std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+				return std::tolower(c);
+			});
+
+			if (openmpt::is_extension_supported2(ext)) {
 				fileList.push_back({false, entry.path().filename().string()});
 			}
 		} else if (std::filesystem::is_directory(entry.status())) {
@@ -70,55 +71,9 @@ void populateFileList() {
 	scrollOffset = 0;
 }
 
-void drawCaptureWaveform(float alphaVal) {
-    if (audioBufferPool == nullptr) return;
-    if (alphaVal <= 0.0f) return;
-
-    int16_t* pcmData = audioBufferPool;
-
-    int maxSafeElements = BUFFER_SIZE * 2;
-
-    float prevX = 0.0f;
-    float prevY = 120.0f;
-    int step = 1;
-
-    u32 lineColor = C2D_Color32(192, 255, 0, (u8)(178.0f * alphaVal));
-    u32 shadowColor = C2D_Color32(0, 0, 0, (u8)(255.0f * alphaVal));
-
-    for (int x = 0; x < 400; x += 2) {
-        int targetIndex = x * step;
-
-        if (targetIndex >= maxSafeElements || targetIndex < 0) {
-            break;
-        }
-
-        int16_t sample = pcmData[targetIndex];
-        float normalized = (float)sample / 32768.0f;
-
-        float currentY = 120.0f + (normalized * 80.0f);
-        float currentX = (float)x;
-
-        if (x > 0) {
-            if (currentY >= 0.0f && currentY <= 240.0f && prevY >= 0.0f && prevY <= 240.0f) {
-                C2D_DrawLine(
-                    prevX, prevY, shadowColor,
-                    currentX, currentY + 3.0f, shadowColor,
-                    2.0f, 0.5f
-                );
-                C2D_DrawLine(
-                    prevX, prevY, lineColor,
-                    currentX, currentY, lineColor,
-                    2.0f, 0.5f
-                );
-            }
-        }
-        prevX = currentX;
-        prevY = currentY;
-    }
-}
-
 int main(int argc, char* argv[]) {
 	osSetSpeedupEnable(true);
+	aptSetSleepAllowed(false);
 
 	gfxInitDefault();
 	gfxSet3D(false);
@@ -128,11 +83,8 @@ int main(int argc, char* argv[]) {
 
 	romfsInit();
 
-	pathTextBuffer = C2D_TextBufNew(256);
-	positionBuffer = C2D_TextBufNew(256);
-	staticTextBuffer = C2D_TextBufNew(4096);
-	fileBrowserBox = C2D_TextBufNew(16384);
-	statusTextBuffer = C2D_TextBufNew(256);
+	pathTextBuffer = C2D_TextBufNew(256); // path at the bottom
+	fileBrowserBox = C2D_TextBufNew(16384); // file browser
 
 	topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
 	bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
@@ -141,34 +93,12 @@ int main(int argc, char* argv[]) {
 	ndspInit();
 	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
 
-	// use hw channel 0
-	int hardwareChannel = 0;
-	ndspChnReset(hardwareChannel);
-	ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
-	ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
+	Playback::Init();
 
-	// allocate buffer memory
-	audioBufferPool = (int16_t*)linearAlloc(BUFFER_SIZE * 2 * sizeof(int16_t));
-
-	ndspWaveBuf waveBuf[2];
-	std::memset(waveBuf, 0, sizeof(waveBuf));
-
-	waveBuf[0].data_vaddr = &audioBufferPool[0];
-	waveBuf[0].nsamples   = BUFFER_SAMPLES;
-	waveBuf[1].data_vaddr = &audioBufferPool[BUFFER_SIZE];
-	waveBuf[1].nsamples   = BUFFER_SAMPLES;
-
-	C2D_TextBufClear(staticTextBuffer);
 	C2D_TextBufClear(pathTextBuffer);
-	C2D_TextBufClear(statusTextBuffer);
-
 	C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
 
-	C2D_TextParse(&statusText, statusTextBuffer, "Idle");
-
 	populateFileList();
-
-	int currentBufferIndex = 0;
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -207,110 +137,41 @@ int main(int argc, char* argv[]) {
 					C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
 				} else {
 					std::filesystem::path targetTrack = currentPath / fileList[selectedFileIndex].name;
-					std::ifstream file(targetTrack, std::ios::binary);
-					if (file.is_open()) {
-						ndspChnReset(hardwareChannel);
-						ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
-						ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
-
-						try {
-							mod = std::make_unique<openmpt::module>(file);
-							std::string titleStr = mod->get_metadata("title");
-							if (titleStr.empty()) titleStr = "Untitled Track";
-
-							std::string status = "> ";
-
-							status += titleStr;
-
-							C2D_TextBufClear(statusTextBuffer);
-							C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
-
-							isPaused = false;
-						} catch (...) {
-							C2D_TextBufClear(statusTextBuffer);
-							C2D_TextParse(&statusText, statusTextBuffer, "Invalid file");
-						}
-					} else {
-						C2D_TextBufClear(statusTextBuffer);
-						C2D_TextParse(&statusText, statusTextBuffer, "Couldn't open file");
-					}
+					Playback::PlayFile(targetTrack.string());
 				}
 			}
 		}
 
-		if (mod) {
-			if (kDown & KEY_B && mod->get_position_seconds() < mod->get_duration_seconds()) {
-				isPaused = !isPaused;
-				ndspChnSetPaused(hardwareChannel, isPaused);
-
-				std::string status = isPaused ? "|| " : "> ";
-
-				std::string titleStr = mod->get_metadata("title");
-				if (titleStr.empty()) titleStr = "Untitled Track";
-
-				status += titleStr;
-
-				C2D_TextBufClear(statusTextBuffer);
-				C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
+		if (Playback::IsModLoaded()) {
+			if (kDown & KEY_B && Playback::GetPosition() < Playback::GetDuration()) {
+				Playback::Pause();
 			}
 
 			if (kDown & KEY_DLEFT) {
-				double currentPos = mod->get_position_seconds();
-				mod->set_position_seconds(std::max(0.0, currentPos - 5.0));
+				Playback::Backward();
 			}
 
 			if (kDown & KEY_DRIGHT) {
-				double currentPos = mod->get_position_seconds();
-				mod->set_position_seconds(currentPos + 5.0);
+				Playback::Forward();
 			}
 
-			if ((waveBuf[currentBufferIndex].status == NDSP_WBUF_FREE || waveBuf[currentBufferIndex].status == NDSP_WBUF_DONE) && !isPaused) {
-				int16_t* interleavedDest = waveBuf[currentBufferIndex].data_pcm16;
-				size_t framesRead = mod->read_interleaved_stereo(SAMPLE_RATE, BUFFER_SAMPLES, interleavedDest);
-
-				if (framesRead == 0) {
-					ndspChnReset(hardwareChannel);
-					ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
-					ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
-				}
-				if (mod->get_position_seconds() >= mod->get_duration_seconds()) {
-					ndspChnReset(hardwareChannel);
-					ndspChnSetFormat(hardwareChannel, NDSP_FORMAT_STEREO_PCM16);
-					ndspChnSetRate(hardwareChannel, SAMPLE_RATE);
-					isPaused = true;
-				}
-
-				DSP_FlushDataCache(waveBuf[currentBufferIndex].data_vaddr, BUFFER_SIZE * sizeof(int16_t));
-				ndspChnWaveBufAdd(hardwareChannel, &waveBuf[currentBufferIndex]);
-				currentBufferIndex = !currentBufferIndex;
+			if (kDown & KEY_X) {
+				Playback::Repeat();
 			}
+
+			Playback::Update();
 		}
+
+		gspWaitForVBlank();
+
+		u32 textColor = C2D_Color32(255, 255, 255, 255);
 
 		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
 		C2D_TargetClear(topTarget, C2D_Color32(64, 64, 64, 255));
 		C2D_SceneBegin(topTarget);
 
-		u32 textColor = C2D_Color32(255, 255, 255, 255);
-
-		if (mod && audioBufferPool != nullptr) {
-			drawCaptureWaveform(1.0f);
-
-			C2D_TextBufClear(positionBuffer);
-
-			double currentSecs = mod->get_position_seconds();
-			double durationSecs = mod->get_duration_seconds();
-			int curMins = (int)currentSecs / 60;
-			int curSecs = (int)currentSecs % 60;
-			int durMins = (int)durationSecs / 60;
-			int durSecs = (int)durationSecs % 60;
-			std::string posStr = "Time: " + std::to_string(curMins) + ":" + (curSecs < 10 ? "0" : "") + std::to_string(curSecs);
-			posStr += " / " + std::to_string(durMins) + ":" + (durSecs < 10 ? "0" : "") + std::to_string(durSecs);
-			C2D_TextParse(&positionText, positionBuffer, posStr.c_str());
-			C2D_DrawText(&positionText, C2D_WithColor, 275.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
-		}
-
-		C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
+		Playback::Draw();
 
 		C2D_TargetClear(bottomTarget, C2D_Color32(64, 64, 64, 255));
 		C2D_SceneBegin(bottomTarget);
@@ -341,8 +202,7 @@ int main(int argc, char* argv[]) {
 
 		C3D_FrameEnd(0);
 	}
-
-	linearFree(audioBufferPool);
+	aptSetSleepAllowed(true);
 	ndspExit();
 	C2D_Fini();
 	C3D_Fini();
