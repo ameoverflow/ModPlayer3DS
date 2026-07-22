@@ -66,6 +66,6 @@ add_custom_command(TARGET ModPlayer3DS POST_BUILD
         COMMAND smdhtool --create "${APP_TITLE}" "${APP_TITLE}" "${APP_AUTHOR}" "${APP_ICON}" ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
         COMMAND 3dsxtool $<TARGET_FILE:ModPlayer3DS> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.3dsx --smdh=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
         COMMAND bannertool makebanner -ci "${CMAKE_CURRENT_SOURCE_DIR}/meta/boing.cgfx" -ca "${CMAKE_CURRENT_SOURCE_DIR}/meta/banner.bcwav" -o "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr"
-        COMMAND makerom -f cia -o ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cia -target t -exefslogo -elf $<TARGET_FILE:ModPlayer3DS> -rsf "${CMAKE_CURRENT_SOURCE_DIR}/meta/modplayer3ds.rsf" -banner "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr" -icon "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh" -ver 48
+        COMMAND makerom -f cia -o ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cia -target t -exefslogo -elf $<TARGET_FILE:ModPlayer3DS> -rsf "${CMAKE_CURRENT_SOURCE_DIR}/meta/modplayer3ds.rsf" -banner "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr" -icon "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh" -ver 64
         COMMENT "Building 3DSX and CIA"
 )

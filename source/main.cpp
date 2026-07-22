@@ -30,8 +30,9 @@ int scrollOffset = 0;
 C2D_TextBuf fileBrowserBox;
 std::vector<C2D_Text> fileTexts;
 std::filesystem::path currentPath = "/";
+std::filesystem::path currentFile;
 
-void populateFileList() {
+void ScanCurrentDir() {
 	fileList.clear();
 	fileTexts.clear();
 	C2D_TextBufClear(fileBrowserBox);
@@ -40,6 +41,19 @@ void populateFileList() {
 		fileList.push_back({true, ".."});
 	}
 
+	// run the list twice, first for dirs, 2nd for files, and sort it
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(currentPath.string())) {
+		if (std::filesystem::is_directory(entry.status())) {
+			fileList.push_back({true, entry.path().filename().string()});
+		}
+	}
+
+	std::sort(fileList.begin(), fileList.end(), [](const FileEntry& a, const FileEntry& b) {
+		return a.name < b.name;
+	});
+
+	// temp file list so it can be sorted independently
+	std::vector<FileEntry> onlyFileList;
 	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(currentPath.string())) {
 		if (std::filesystem::is_regular_file(entry.status())) {
 			std::string ext = entry.path().extension().string();
@@ -53,17 +67,19 @@ void populateFileList() {
 			});
 
 			if (openmpt::is_extension_supported2(ext)) {
-				fileList.push_back({false, entry.path().filename().string()});
+				onlyFileList.push_back({false, entry.path().filename().string()});
 			}
-		} else if (std::filesystem::is_directory(entry.status())) {
-			fileList.push_back({true, entry.path().filename().string()});
 		}
 	}
 
+	std::sort(onlyFileList.begin(), onlyFileList.end(), [](const FileEntry& a, const FileEntry& b) {
+		return a.name < b.name;
+	});
+	fileList.insert(fileList.end(), onlyFileList.begin(), onlyFileList.end());
 
 	fileTexts.resize(fileList.size());
 	for (size_t i = 0; i < fileList.size(); i++) {
-		C2D_TextParse(&fileTexts[i], fileBrowserBox, fileList[i].name.size() > 40 ?
+		C2D_TextParse(&fileTexts[i], fileBrowserBox, fileList[i].name.size() > 64 ?
 					  (fileList[i].name.substr(0, 37) + "...").c_str() : fileList[i].name.c_str());
 	}
 
@@ -98,7 +114,7 @@ int main(int argc, char* argv[]) {
 	C2D_TextBufClear(pathTextBuffer);
 	C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
 
-	populateFileList();
+	ScanCurrentDir();
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -125,11 +141,11 @@ int main(int argc, char* argv[]) {
 				if (fileList[selectedFileIndex].isDir) {
 					if (fileList[selectedFileIndex].name == "..") {
 						currentPath = currentPath.parent_path();
-						populateFileList();
+						ScanCurrentDir();
 						selectedFileIndex = 0;
 					} else {
 						currentPath /= fileList[selectedFileIndex].name;
-						populateFileList();
+						ScanCurrentDir();
 						selectedFileIndex = 0;
 					}
 
@@ -137,6 +153,7 @@ int main(int argc, char* argv[]) {
 					C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
 				} else {
 					std::filesystem::path targetTrack = currentPath / fileList[selectedFileIndex].name;
+					currentFile = targetTrack;
 					Playback::PlayFile(targetTrack.string());
 				}
 			}
@@ -173,6 +190,15 @@ int main(int argc, char* argv[]) {
 				}
 			}
 
+			if (kDown & KEY_R) {
+				int waveform = Playback::GetWaveform();
+				if (waveform >= 1) {
+					Playback::SetWaveform(0);
+				} else {
+					Playback::SetWaveform(waveform + 1);
+				}
+			}
+
 			Playback::Update();
 		}
 
@@ -204,13 +230,17 @@ int main(int argc, char* argv[]) {
 				color = C2D_Color32(192, 255, 0, 255);
 				C2D_DrawRectSolid(startX - 8.0f, currentY + 6.0f, 0.5f, 4.0f, 4.0f, color);
 			} else {
-				color = fileList[itemIndex].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
+				if (currentPath / fileList[itemIndex].name == currentFile) {
+					color = C2D_Color32(61, 88, 244, 255);
+				} else {
+					color = fileList[itemIndex].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
+				}
 			}
 
 			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX, currentY, 0.5f, 0.45f, 0.45f, color);
 		}
 
-		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 215.0f, 0.6f, 0.5f, 0.5f, textColor);
+		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 215.0f, 0.5f, 0.45f, 0.45f, textColor);
 
 		C3D_FrameEnd(0);
 	}

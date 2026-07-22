@@ -14,7 +14,7 @@
 
 namespace Playback {
     void Init();
-    void PlayFile(std::string path);
+    void PlayFile(const std::string& path);
     void Update();
     void Pause();
     void Forward();
@@ -22,6 +22,8 @@ namespace Playback {
     void Draw();
     void SetInterpolation(int interpolation);
     int GetInterpolation();
+    void SetWaveform(int waveform);
+    int GetWaveform();
     double GetPosition();
     double GetDuration();
     bool IsModLoaded();
