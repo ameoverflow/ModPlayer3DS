@@ -10,3 +10,4 @@ Simple module player for 3DS
 - B: Pause
 - A: Enter directory or play
 - L: Change interpolation
+- R: Change waveform
