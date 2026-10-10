@@ -11,6 +11,7 @@
 #define BUFFER_SIZE (BUFFER_SAMPLES * 2)
 
 #include <string>
+#include "Waveform.h"
 
 namespace Playback {
     void Init();
@@ -22,8 +23,7 @@ namespace Playback {
     void Draw();
     void SetInterpolation(int interpolation);
     int GetInterpolation();
-    void SetWaveform(int waveform);
-    int GetWaveform();
+    void SetWaveform(Waveform* waveform);
     double GetPosition();
     double GetDuration();
     bool IsModLoaded();

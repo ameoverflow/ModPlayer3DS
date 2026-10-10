@@ -11,6 +11,8 @@
 #include "libopenmpt/libopenmpt.hpp"
 #include <3ds.h>
 
+#include "Waveform.h"
+
 std::string songTitle;
 bool isPaused;
 
@@ -28,116 +30,16 @@ std::string message = "";
 u64 messageShown;
 
 int setInterpolation = 4;
-int waveformSelected = 0;
+Waveform* currentWaveform;
 
 double Playback::GetPosition() { return mod ? mod->get_position_seconds() : 0; }
 double Playback::GetDuration() { return mod ? mod->get_duration_seconds() : 0; }
 bool Playback::IsModLoaded() { return mod != nullptr; }
 int Playback::GetInterpolation() { return mod->get_render_param(openmpt::module::render_param::RENDER_INTERPOLATIONFILTER_LENGTH); }
-int Playback::GetWaveform() { return waveformSelected; }
 
 void ShowMessage(std::string msg) {
     message = msg;
     messageShown = osGetTime();
-}
-
-void DrawWaveform() {
-    if (audioBufferPool == nullptr) return;
-
-    int16_t* pcmData = &audioBufferPool[currentBufferIndex * BUFFER_SIZE];
-    int totalElements = BUFFER_SAMPLES * 2;
-
-    int screenWidth = 400;
-    float centerY = 120.0f;
-
-    u32 lineColor = C2D_Color32(192, 255, 0, 178);
-    u32 shadowColor = C2D_Color32(0, 0, 0, 255);
-
-    int elementsPerPixel = totalElements / screenWidth;
-    if (elementsPerPixel < 2) elementsPerPixel = 2;
-
-    for (int x = 0; x < screenWidth; x += 2) {
-        int startIdx = x * elementsPerPixel;
-        int endIdx = startIdx + (elementsPerPixel * 2);
-
-        if (startIdx >= totalElements) break;
-        if (endIdx > totalElements) endIdx = totalElements;
-
-        int16_t minVal = 32767;
-        int16_t maxVal = -32768;
-
-        for (int i = startIdx; i < endIdx - 1; i += 2) {
-            int16_t monoSample = (pcmData[i] + pcmData[i + 1]) >> 1;
-
-            if (monoSample > maxVal) maxVal = monoSample;
-            if (monoSample < minVal) minVal = monoSample;
-        }
-
-        float topY = centerY + (float)(minVal >> 9);
-        float bottomY = centerY + (float)(maxVal >> 9);
-
-        if (topY < 0.0f)   topY = 0.0f;
-        if (bottomY > 240.0f) bottomY = 240.0f;
-
-        C2D_DrawLine(
-            x, topY, shadowColor,
-            x, bottomY + 2.0f, shadowColor,
-            2.0f, 0.5f
-        );
-
-        C2D_DrawLine(
-            x, topY, lineColor,
-            x, bottomY, lineColor,
-            2.0f, 0.5f
-        );
-    }
-}
-
-void DrawWaveformOld() {
-    if (audioBufferPool == nullptr) return;
-
-    int16_t* pcmData = audioBufferPool;
-
-    int maxSafeElements = BUFFER_SIZE * 2;
-
-    float prevX = 0.0f;
-    float prevY = 120.0f;
-
-    int step = maxSafeElements / 100;
-    if (step < 1) step = 1;
-
-    u32 lineColor = C2D_Color32(192, 255, 0, 178.0f);
-    u32 shadowColor = C2D_Color32(0, 0, 0, 255.0f);
-
-    int currIndex = 0;
-
-    for (int x = 0; x < 400; x += 4) {
-        currIndex = x / 4 * step;
-
-        if (currIndex >= maxSafeElements || currIndex + 1 >= maxSafeElements) {
-            break;
-        }
-
-        int16_t sample = (pcmData[currIndex] + pcmData[currIndex + 1]) >> 1;
-        float currentY = 120.0f + (float)(sample >> 9);
-
-        if (x > 0) {
-            if (currentY >= 0.0f && currentY <= 240.0f && prevY >= 0.0f && prevY <= 240.0f) {
-                C2D_DrawLine(
-                    prevX, prevY, shadowColor,
-                    x, currentY + 3.0f, shadowColor,
-                    2.0f, 0.5f
-                );
-                C2D_DrawLine(
-                    prevX, prevY, lineColor,
-                    x, currentY, lineColor,
-                    2.0f, 0.5f
-                );
-            }
-        }
-        prevX = x;
-        prevY = currentY;
-    }
 }
 
 void Playback::Init() {
@@ -197,13 +99,29 @@ void Playback::Pause() {
 }
 
 void Playback::Forward() {
-    double currentPos = mod->get_position_seconds();
-    mod->set_position_seconds(std::max(0.0, currentPos + 5.0));
+    double duration = mod->get_duration_seconds();
+
+    double relativePos = std::fmod(mod->get_position_seconds(), duration);
+
+    double newPos = relativePos + 5.0;
+    if (newPos >= duration) {
+        newPos = std::fmod(newPos, duration);
+    }
+
+    mod->set_position_seconds(newPos);
 }
 
 void Playback::Backward() {
-    double currentPos = mod->get_position_seconds();
-    mod->set_position_seconds(std::max(0.0, currentPos - 5.0));
+    double duration = mod->get_duration_seconds();
+
+    double relativePos = std::fmod(mod->get_position_seconds(), duration);
+
+    double newPos = relativePos - 5.0;
+    if (newPos < 0.0) {
+        newPos += duration;
+    }
+
+    mod->set_position_seconds(newPos);
 }
 
 void Playback::SetInterpolation(int interpolation) {
@@ -212,19 +130,9 @@ void Playback::SetInterpolation(int interpolation) {
     setInterpolation = interpolation;
 }
 
-void Playback::SetWaveform(int waveform) {
-    waveformSelected = waveform;
-    switch (waveform) {
-        case 0:
-            ShowMessage("Visualization: Wave 1");
-            break;
-        case 1:
-            ShowMessage("Visualization: Wave 2");
-            break;
-        case 2:
-            ShowMessage("Visualization: Wave 3");
-            break;
-    }
+void Playback::SetWaveform(Waveform* waveform) {
+    currentWaveform = waveform;
+    ShowMessage("Visualization: " + waveform->GetName());
 }
 
 void Playback::Update() {
@@ -271,16 +179,9 @@ void Playback::Update() {
 
 void Playback::Draw() {
     u32 textColor = C2D_Color32(255, 255, 255, 255);
-    if (mod && audioBufferPool != nullptr) {
-        switch (waveformSelected) {
-            case 0:
-                DrawWaveform();
-                break;
-            case 1:
-                DrawWaveformOld();
-                break;
-        }
+    if (mod && audioBufferPool != nullptr && currentWaveform != nullptr) {
+        currentWaveform->Draw(audioBufferPool, currentBufferIndex);
     }
 
-    C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.5f, 0.5f, textColor);
+    C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.45f, 0.45f, textColor);
 }

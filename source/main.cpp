@@ -7,8 +7,10 @@
 #include <libopenmpt/libopenmpt.hpp>
 #include <citro2d.h>
 #include <dirent.h>
-
 #include "Playback.h"
+#include "Waveform.h"
+#include "waveforms/WaveformNew.h"
+#include "waveforms/WaveformOld.h"
 
 struct FileEntry {
 	bool isDir;
@@ -31,6 +33,12 @@ C2D_TextBuf fileBrowserBox;
 std::vector<C2D_Text> fileTexts;
 std::filesystem::path currentPath = "/";
 std::filesystem::path currentFile;
+
+Waveform* waveforms[] = {
+	new WaveformNew(),
+	new WaveformOld()
+};
+int waveformIndex = 0;
 
 void ScanCurrentDir() {
 	fileList.clear();
@@ -110,6 +118,7 @@ int main(int argc, char* argv[]) {
 	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
 
 	Playback::Init();
+	Playback::SetWaveform(waveforms[waveformIndex]);
 
 	C2D_TextBufClear(pathTextBuffer);
 	C2D_TextParse(&pathText, pathTextBuffer, currentPath.string().c_str());
@@ -191,12 +200,11 @@ int main(int argc, char* argv[]) {
 			}
 
 			if (kDown & KEY_R) {
-				int waveform = Playback::GetWaveform();
-				if (waveform >= 1) {
-					Playback::SetWaveform(0);
-				} else {
-					Playback::SetWaveform(waveform + 1);
+				waveformIndex++;
+				if (waveformIndex >= std::size(waveforms)) {
+					waveformIndex = 0;
 				}
+				Playback::SetWaveform(waveforms[waveformIndex]);
 			}
 
 			Playback::Update();
@@ -206,18 +214,13 @@ int main(int argc, char* argv[]) {
 
 		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
-		C2D_TargetClear(topTarget, C2D_Color32(32, 32, 32, 255));
-		C2D_SceneBegin(topTarget);
-
-		Playback::Draw();
-
-		C2D_TargetClear(bottomTarget, C2D_Color32(32, 32, 32, 255));
+		C2D_TargetClear(bottomTarget, C2D_Color32(10, 10, 10, 255));
 		C2D_SceneBegin(bottomTarget);
 
-		float startX = 12.0f;
-		float startY = 12.0f;
-		float spacing = 14.0f;
-		int maxVisibleItems = 14;
+		float startX = 10.0f;
+		float startY = 10.0f;
+		float spacing = 12.0f;
+		int maxVisibleItems = 17;
 
 		for (int i = 0; i < maxVisibleItems; i++) {
 			int itemIndex = scrollOffset + i;
@@ -227,11 +230,13 @@ int main(int argc, char* argv[]) {
 
 			u32 color;
 			if (itemIndex == selectedFileIndex) {
-				color = C2D_Color32(192, 255, 0, 255);
-				C2D_DrawRectSolid(startX - 8.0f, currentY + 6.0f, 0.5f, 4.0f, 4.0f, color);
+				color = C2D_Color32(133, 96, 214, 255);
+				C2D_DrawTriangle(startX - 8.0f, currentY + 4.0f, color,
+								startX - 8.0f, currentY + 11.0f, color,
+								startX - 4.0f, currentY + 7.0f, color, 0.5f);
 			} else {
 				if (currentPath / fileList[itemIndex].name == currentFile) {
-					color = C2D_Color32(61, 88, 244, 255);
+					color = C2D_Color32(152, 125, 212, 255);
 				} else {
 					color = fileList[itemIndex].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
 				}
@@ -240,7 +245,12 @@ int main(int argc, char* argv[]) {
 			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX, currentY, 0.5f, 0.45f, 0.45f, color);
 		}
 
-		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 215.0f, 0.5f, 0.45f, 0.45f, textColor);
+		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 220.0f, 0.5f, 0.45f, 0.45f, textColor);
+
+		C2D_TargetClear(topTarget, C2D_Color32(10, 10, 10, 255));
+		C2D_SceneBegin(topTarget);
+
+		Playback::Draw();
 
 		C3D_FrameEnd(0);
 	}

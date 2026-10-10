@@ -16,12 +16,17 @@ project(ModPlayer3DS)
 
 set(APP_TITLE "ModPlayer3DS")
 set(APP_AUTHOR "ameOverflow")
-set(APP_VERSION "0.3")
+set(APP_VERSION "0.5")
 set(APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/meta/music-player.png")
 
 set(SOURCES
         source/main.cpp
         source/Playback.cpp
+        source/Waveform.h
+        source/waveforms/WaveformOld.cpp
+        source/waveforms/WaveformOld.h
+        source/waveforms/WaveformNew.cpp
+        source/waveforms/WaveformNew.h
 )
 
 add_executable(ModPlayer3DS ${SOURCES})
@@ -66,6 +71,6 @@ add_custom_command(TARGET ModPlayer3DS POST_BUILD
         COMMAND smdhtool --create "${APP_TITLE}" "${APP_TITLE}" "${APP_AUTHOR}" "${APP_ICON}" ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
         COMMAND 3dsxtool $<TARGET_FILE:ModPlayer3DS> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.3dsx --smdh=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
         COMMAND bannertool makebanner -ci "${CMAKE_CURRENT_SOURCE_DIR}/meta/boing.cgfx" -ca "${CMAKE_CURRENT_SOURCE_DIR}/meta/banner.bcwav" -o "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr"
-        COMMAND makerom -f cia -o ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cia -target t -exefslogo -elf $<TARGET_FILE:ModPlayer3DS> -rsf "${CMAKE_CURRENT_SOURCE_DIR}/meta/modplayer3ds.rsf" -banner "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr" -icon "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh" -ver 64
+        COMMAND makerom -f cia -o ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cia -target t -exefslogo -elf $<TARGET_FILE:ModPlayer3DS> -rsf "${CMAKE_CURRENT_SOURCE_DIR}/meta/modplayer3ds.rsf" -banner "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr" -icon "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh" -ver 80
         COMMENT "Building 3DSX and CIA"
 )
