@@ -1,0 +1,3 @@
+[submodule "ext/libopenmpt"]
+	path = ext/libopenmpt
+	url = https://github.com/OpenMPT/openmpt.git
