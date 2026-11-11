@@ -18,6 +18,11 @@ set(APP_TITLE "ModPlayer3DS")
 set(APP_AUTHOR "ameOverflow")
 set(APP_VERSION "0.5")
 set(APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/meta/music-player.png")
+set(GRAPHICS "${CMAKE_CURRENT_SOURCE_DIR}/gfx")
+set(ROMFS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+set(GFXBUILD "${CMAKE_CURRENT_SOURCE_DIR}/assets/gfx")
+
+# Gather required files
 
 set(SOURCES
         source/main.cpp
@@ -29,7 +34,26 @@ set(SOURCES
         source/waveforms/WaveformNew.h
 )
 
-add_executable(ModPlayer3DS ${SOURCES})
+file(GLOB T3S_FILES "${GRAPHICS}/*.t3s")
+file(MAKE_DIRECTORY ${GFXBUILD})
+set(TEX_OUTPUTS ""
+        source/Theme.h)
+message(STATUS "Found graphics files: ${T3S_FILES}")
+
+foreach(T3S_FILE ${T3S_FILES})
+    get_filename_component(FILE_NAME ${T3S_FILE} NAME_WE)
+    add_custom_command(
+            OUTPUT "${GFXBUILD}/${FILE_NAME}.t3x"
+            DEPENDS ${T3S_FILE}
+            COMMAND tex3ds -i ${T3S_FILE} -o "${GFXBUILD}/${FILE_NAME}.t3x"
+            COMMENT "compiling ${FILE_NAME}.t3s"
+    )
+    list(APPEND TEX_OUTPUTS "${GFXBUILD}/${FILE_NAME}.t3x")
+endforeach()
+
+# Set up required compile options and libs
+
+add_executable(ModPlayer3DS ${SOURCES} ${TEX_OUTPUTS})
 set_target_properties(ModPlayer3DS PROPERTIES
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
@@ -66,11 +90,12 @@ else()
     target_link_options(ModPlayer3DS PRIVATE -g3 -O0 -Wl,-Map,${TARGET}.map)
 endif()
 
+# Build the final rom
 
 add_custom_command(TARGET ModPlayer3DS POST_BUILD
         COMMAND smdhtool --create "${APP_TITLE}" "${APP_TITLE}" "${APP_AUTHOR}" "${APP_ICON}" ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
-        COMMAND 3dsxtool $<TARGET_FILE:ModPlayer3DS> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.3dsx --smdh=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
+        COMMAND 3dsxtool $<TARGET_FILE:ModPlayer3DS> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.3dsx --smdh=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh --romfs=${ROMFS}
         COMMAND bannertool makebanner -ci "${CMAKE_CURRENT_SOURCE_DIR}/meta/boing.cgfx" -ca "${CMAKE_CURRENT_SOURCE_DIR}/meta/banner.bcwav" -o "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr"
-        COMMAND makerom -f cia -o ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cia -target t -exefslogo -elf $<TARGET_FILE:ModPlayer3DS> -rsf "${CMAKE_CURRENT_SOURCE_DIR}/meta/modplayer3ds.rsf" -banner "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr" -icon "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh" -ver 80
+        COMMAND makerom -f cia -o ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cia -target t -exefslogo -elf $<TARGET_FILE:ModPlayer3DS> -rsf "${CMAKE_CURRENT_SOURCE_DIR}/meta/modplayer3ds.rsf" -banner "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bnr" -icon "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh" -ver 80 -DAPP_ROMFS="${ROMFS}"
         COMMENT "Building 3DSX and CIA"
 )

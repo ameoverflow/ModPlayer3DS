@@ -8,6 +8,7 @@
 #include <citro2d.h>
 #include <dirent.h>
 #include "Playback.h"
+#include "Theme.h"
 #include "Waveform.h"
 #include "waveforms/WaveformNew.h"
 #include "waveforms/WaveformOld.h"
@@ -17,22 +18,31 @@ struct FileEntry {
 	std::string name;
 };
 
-C3D_RenderTarget* topTarget;
+u64 lastTick = 0;
+float dt = 0.0f;
+
+// rendering stuff
+C3D_RenderTarget* topTarget0;
+C3D_RenderTarget* topTarget1;
 C3D_RenderTarget* bottomTarget;
 
-std::string path;
+C2D_SpriteSheet bgSheet;
+C2D_Image bgTop, bgBottom;
+float bgX;
 
+// current path
+std::filesystem::path currentPath = "/";
 C2D_TextBuf pathTextBuffer;
 C2D_Text pathText;
 
+// file browser stuff
 std::vector<FileEntry> fileList;
 int selectedFileIndex = 0;
 int scrollOffset = 0;
 
 C2D_TextBuf fileBrowserBox;
 std::vector<C2D_Text> fileTexts;
-std::filesystem::path currentPath = "/";
-std::filesystem::path currentFile;
+std::filesystem::path currentFile; // currently playing file
 
 Waveform* waveforms[] = {
 	new WaveformNew(),
@@ -100,17 +110,21 @@ int main(int argc, char* argv[]) {
 	aptSetSleepAllowed(false);
 
 	gfxInitDefault();
-	gfxSet3D(false);
+	gfxSet3D(true);
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
 	C2D_Prepare();
 
 	romfsInit();
+	bgSheet = C2D_SpriteSheetLoad("romfs:/gfx/bg.t3x");
+	bgTop = C2D_SpriteSheetGetImage(bgSheet, 0);
+	bgBottom = C2D_SpriteSheetGetImage(bgSheet, 1);
 
 	pathTextBuffer = C2D_TextBufNew(256); // path at the bottom
 	fileBrowserBox = C2D_TextBufNew(16384); // file browser
 
-	topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
+	topTarget0 = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
+	topTarget1 = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);
 	bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
 
 	// init audio
@@ -129,13 +143,14 @@ int main(int argc, char* argv[]) {
 		hidScanInput();
 
 		u32 kDown = hidKeysDown();
+		u32 kHeld = hidKeysDownRepeat();
 
 		if (!fileList.empty()) {
-			if (kDown & KEY_DOWN) {
+			if (kHeld & KEY_DOWN) {
 				selectedFileIndex++;
 				if (selectedFileIndex >= (int)fileList.size()) selectedFileIndex = 0;
 			}
-			if (kDown & KEY_UP) {
+			if (kHeld & KEY_UP) {
 				selectedFileIndex--;
 				if (selectedFileIndex < 0) selectedFileIndex = (int)fileList.size() - 1;
 			}
@@ -168,7 +183,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		if (Playback::IsModLoaded()) {
+		if (Playback::IsModLoaded())  {
 			if (kDown & KEY_B && Playback::GetPosition() < Playback::GetDuration()) {
 				Playback::Pause();
 			}
@@ -210,12 +225,22 @@ int main(int argc, char* argv[]) {
 			Playback::Update();
 		}
 
-		u32 textColor = C2D_Color32(255, 255, 255, 255);
+		u64 currentTick = svcGetSystemTick();
+		dt = (float)(currentTick - lastTick) / CPU_TICKS_PER_MSEC / 1000.0f;
+		lastTick = currentTick;
+		if (dt > 0.1f) dt = 0.1f;
+
+		bgX -= 0.5f * (dt * 60.0f);
+		if (bgX <= -80.0f) {
+			bgX += 80.0f;
+		}
 
 		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
 		C2D_TargetClear(bottomTarget, C2D_Color32(10, 10, 10, 255));
 		C2D_SceneBegin(bottomTarget);
+
+		C2D_DrawImageAt(bgBottom, bgX, 0.0f, 0.5f, NULL, 1.0f, 1.0f);
 
 		float startX = 10.0f;
 		float startY = 10.0f;
@@ -230,34 +255,51 @@ int main(int argc, char* argv[]) {
 
 			u32 color;
 			if (itemIndex == selectedFileIndex) {
-				color = C2D_Color32(133, 96, 214, 255);
-				C2D_DrawTriangle(startX - 8.0f, currentY + 4.0f, color,
-								startX - 8.0f, currentY + 11.0f, color,
-								startX - 4.0f, currentY + 7.0f, color, 0.5f);
+				color = selectedText;
+				C2D_DrawTriangle(startX - 8.0f, currentY + 3.0f, triangleColor,
+								startX - 8.0f, currentY + 9.0f, triangleColor,
+								startX - 4.0f, currentY + 6.0f, triangleColor, 0.5f);
 			} else {
 				if (currentPath / fileList[itemIndex].name == currentFile) {
-					color = C2D_Color32(152, 125, 212, 255);
+					color = currentlyPlayingText;
 				} else {
-					color = fileList[itemIndex].isDir ? C2D_Color32(128, 128, 128, 255) : C2D_Color32(255, 255, 255, 255);
+					color = fileList[itemIndex].isDir ? directoryText : mainText;
 				}
 			}
 
+			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX + 2, currentY + 2, 0.5f, 0.45f, 0.45f, C2D_Color32(0, 0, 0, 255));
 			C2D_DrawText(&fileTexts[itemIndex], C2D_WithColor, startX, currentY, 0.5f, 0.45f, 0.45f, color);
 		}
 
-		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 220.0f, 0.5f, 0.45f, 0.45f, textColor);
+		C2D_DrawText(&pathText, C2D_WithColor, 12.0f, 222.0f, 0.5f, 0.45f, 0.45f, C2D_Color32(0, 0, 0, 255));
+		C2D_DrawText(&pathText, C2D_WithColor, 10.0f, 220.0f, 0.5f, 0.45f, 0.45f, mainText);
 
-		C2D_TargetClear(topTarget, C2D_Color32(10, 10, 10, 255));
-		C2D_SceneBegin(topTarget);
+		float slider = osGet3DSliderState();
+		float maxDepth = 3.0f; // max pixel shift, adjust to taste
+		float offset = slider * maxDepth;
 
+		C2D_TargetClear(topTarget0, C2D_Color32(10, 10, 10, 255));
+		C2D_SceneBegin(topTarget0);
+
+		C2D_DrawImageAt(bgTop, bgX - 560 - offset, 0.0f, 0.5f, NULL, 1.0f, 1.0f);
+		C2D_DrawImageAt(bgTop, bgX - offset, 0.0f, 0.5f, NULL, 1.0f, 1.0f);
+		Playback::Draw();
+
+		C2D_TargetClear(topTarget1, C2D_Color32(10, 10, 10, 255));
+		C2D_SceneBegin(topTarget1);
+
+		C2D_DrawImageAt(bgTop, bgX - 560 + offset, 0.0f, 0.5f, NULL, 1.0f, 1.0f);
+		C2D_DrawImageAt(bgTop, bgX + offset, 0.0f, 0.5f, NULL, 1.0f, 1.0f);
 		Playback::Draw();
 
 		C3D_FrameEnd(0);
 	}
 	aptSetSleepAllowed(true);
-	ndspExit();
+	C2D_SpriteSheetFree(bgSheet);
 	C2D_Fini();
 	C3D_Fini();
+	romfsExit();
+	ndspExit();
 	gfxExit();
 	return 0;
 }

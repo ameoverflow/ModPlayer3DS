@@ -11,33 +11,15 @@
 #include "libopenmpt/libopenmpt.hpp"
 #include <3ds.h>
 
+#include "Theme.h"
 #include "Waveform.h"
-
-std::string songTitle;
-bool isPaused;
-
-int16_t* audioBufferPool;
-ndspWaveBuf waveBuf[2];
-int hardwareChannel = 0;
-u64 lastTime = 0;
-
-C2D_TextBuf statusTextBuffer;
-C2D_Text statusText;
-std::unique_ptr<openmpt::module> mod = nullptr;
-int currentBufferIndex = 0;
-
-std::string message = "";
-u64 messageShown;
-
-int setInterpolation = 4;
-Waveform* currentWaveform;
 
 double Playback::GetPosition() { return mod ? mod->get_position_seconds() : 0; }
 double Playback::GetDuration() { return mod ? mod->get_duration_seconds() : 0; }
 bool Playback::IsModLoaded() { return mod != nullptr; }
 int Playback::GetInterpolation() { return mod->get_render_param(openmpt::module::render_param::RENDER_INTERPOLATIONFILTER_LENGTH); }
 
-void ShowMessage(std::string msg) {
+void Playback::ShowMessage(std::string msg) {
     message = msg;
     messageShown = osGetTime();
 }
@@ -58,9 +40,11 @@ void Playback::Init() {
     waveBuf[1].nsamples   = BUFFER_SAMPLES;
 
     statusTextBuffer = C2D_TextBufNew(256);
+    songInfoTextBuffer = C2D_TextBufNew(256);
 
     C2D_TextBufClear(statusTextBuffer);
-    C2D_TextParse(&statusText, statusTextBuffer, "Idle");
+    C2D_TextBufClear(songInfoTextBuffer);
+    C2D_TextParse(&songInfo, songInfoTextBuffer, "Idle");
 }
 
 void Playback::PlayFile(const std::string& path) {
@@ -81,14 +65,14 @@ void Playback::PlayFile(const std::string& path) {
             isPaused = false;
 
         } catch (...) {
-            C2D_TextBufClear(statusTextBuffer);
-            C2D_TextParse(&statusText, statusTextBuffer, "Idle");
+            C2D_TextBufClear(songInfoTextBuffer);
+            C2D_TextParse(&songInfo, songInfoTextBuffer, "Idle");
             ShowMessage("Invalid file");
 
         }
     } else {
-        C2D_TextBufClear(statusTextBuffer);
-        C2D_TextParse(&statusText, statusTextBuffer, "Idle");
+        C2D_TextBufClear(songInfoTextBuffer);
+        C2D_TextParse(&songInfo, songInfoTextBuffer, "Idle");
         ShowMessage("Invalid file");
     }
 }
@@ -163,13 +147,21 @@ void Playback::Update() {
         int durMins = (int)durationSecs / 60;
         int durSecs = (int)durationSecs % 60;
 
+        C2D_TextParse(&statusText, statusTextBuffer, message.c_str());
+
+        int totalProgressBarWidth = 400;
+        float progress = currentSecs / durationSecs;
+        if (progress > 1.0f) progress = 1.0f;
+        if (progress < 0.0f) progress = 0.0f;
+
+        playProgressWidth = totalProgressBarWidth * progress;
+
+        C2D_TextBufClear(songInfoTextBuffer);
         std::string status = isPaused ? "|| " : "> ";
         status += songTitle;
         status += "\nTime: " + std::to_string(curMins) + ":" + (curSecs < 10 ? "0" : "") + std::to_string(curSecs);
         status += " / " + std::to_string(durMins) + ":" + (durSecs < 10 ? "0" : "") + std::to_string(durSecs);
-        status += "\nPattern / row: " + std::to_string(mod->get_current_pattern()) + " / " + std::to_string(mod->get_current_row());
-        status += "\n" + message;
-        C2D_TextParse(&statusText, statusTextBuffer, status.c_str());
+        C2D_TextParse(&songInfo, songInfoTextBuffer, status.c_str());
     }
 
     if (currentTime - messageShown >= 3000 && !message.empty()) {
@@ -178,10 +170,19 @@ void Playback::Update() {
 }
 
 void Playback::Draw() {
-    u32 textColor = C2D_Color32(255, 255, 255, 255);
     if (mod && audioBufferPool != nullptr && currentWaveform != nullptr) {
         currentWaveform->Draw(audioBufferPool, currentBufferIndex);
     }
 
-    C2D_DrawText(&statusText, C2D_WithColor, 10.0f, 10.0f, 0.6f, 0.45f, 0.45f, textColor);
+    C2D_DrawText(&statusText, C2D_WithColor, 7.0f, 7.0f, 0.6f, 0.45f, 0.45f, C2D_Color32(0, 0, 0, 255));
+    C2D_DrawText(&statusText, C2D_WithColor, 5.0f, 5.0f, 0.6f, 0.45f, 0.45f, mainText);
+
+    C2D_DrawRectSolid(0, 237, 0.6f, 400, 3, progressBarBackground);
+    C2D_DrawRectSolid(0, 237, 0.6f, playProgressWidth, 3, progressBarMain);
+
+    float textWidth, textHeight;
+    C2D_TextGetDimensions(&songInfo, 0.45f, 0.45f, &textWidth, &textHeight);
+    float textY = 237 - 5.0f - textHeight;
+    C2D_DrawText(&songInfo, C2D_WithColor, 7, textY + 2, 0.5f, 0.45f, 0.45f, C2D_Color32(0, 0, 0, 255));
+    C2D_DrawText(&songInfo, C2D_WithColor, 5, textY, 0.5f, 0.45f, 0.45f, mainText);
 }

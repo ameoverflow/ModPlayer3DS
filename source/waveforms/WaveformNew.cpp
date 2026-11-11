@@ -5,6 +5,7 @@
 #include "WaveformNew.h"
 #include <citro2d.h>
 #include "Playback.h"
+#include "Theme.h"
 
 void WaveformNew::Draw(int16_t *audioBufferPool, int currentBufferIndex) {
     if (audioBufferPool == nullptr) return;
@@ -14,9 +15,6 @@ void WaveformNew::Draw(int16_t *audioBufferPool, int currentBufferIndex) {
 
     int screenWidth = 400;
     float centerY = 120.0f;
-
-    u32 lineColor = C2D_Color32(68, 0, 215, 255);
-    u32 shadowColor = C2D_Color32(0, 0, 0, 255);
 
     int elementsPerPixel = totalElements / screenWidth;
     if (elementsPerPixel < 2) elementsPerPixel = 2;
@@ -45,14 +43,14 @@ void WaveformNew::Draw(int16_t *audioBufferPool, int currentBufferIndex) {
         if (bottomY > 240.0f) bottomY = 240.0f;
 
         C2D_DrawLine(
-            x, topY, shadowColor,
-            x, bottomY + 2.0f, shadowColor,
+            x, topY, C2D_Color32(0, 0, 0, 255),
+            x, bottomY + 2.0f, C2D_Color32(0, 0, 0, 255),
             2.0f, 0.5f
         );
 
         C2D_DrawLine(
-            x, topY, lineColor,
-            x, bottomY, lineColor,
+            x, topY, mainColor,
+            x, bottomY, mainColor,
             2.0f, 0.5f
         );
     }
