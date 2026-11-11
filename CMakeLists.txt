@@ -11,6 +11,12 @@ list(APPEND CMAKE_PROGRAM_PATH  "${DEVKITPRO}/tools/bin")
 list(APPEND CMAKE_PROGRAM_PATH  "${DEVKITPRO}/devkitARM/bin")
 set(CMAKE_C_COMPILER "arm-none-eabi-gcc")
 set(CMAKE_CXX_COMPILER "arm-none-eabi-g++")
+set(ARCH
+        -march=armv6k
+        -mtune=mpcore
+        -mfloat-abi=hard
+        -mtp=soft
+)
 
 project(ModPlayer3DS)
 
@@ -22,8 +28,6 @@ set(GRAPHICS "${CMAKE_CURRENT_SOURCE_DIR}/gfx")
 set(ROMFS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
 set(GFXBUILD "${CMAKE_CURRENT_SOURCE_DIR}/assets/gfx")
 
-# Gather required files
-
 set(SOURCES
         source/main.cpp
         source/Playback.cpp
@@ -34,6 +38,7 @@ set(SOURCES
         source/waveforms/WaveformNew.h
 )
 
+# compile t3s stuffs
 file(GLOB T3S_FILES "${GRAPHICS}/*.t3s")
 file(MAKE_DIRECTORY ${GFXBUILD})
 set(TEX_OUTPUTS ""
@@ -51,8 +56,45 @@ foreach(T3S_FILE ${T3S_FILES})
     list(APPEND TEX_OUTPUTS "${GFXBUILD}/${FILE_NAME}.t3x")
 endforeach()
 
-# Set up required compile options and libs
+# compile libopenmpt from source
+include(ExternalProject)
 
+string(REPLACE ";" " " ARCH_STR "${ARCH}")
+cmake_host_system_information(RESULT HOST_CPU_COUNT QUERY NUMBER_OF_LOGICAL_CORES)
+
+ExternalProject_Add(libopenmpt_build
+        PREFIX ${CMAKE_BINARY_DIR}/libopenmpt-ext
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}/ext/libopenmpt
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND sh -c "cd ${CMAKE_SOURCE_DIR}/ext/libopenmpt && make -j${HOST_CPU_COUNT} CONFIG=gcc \
+              CC='${CMAKE_CXX_COMPILER}' \
+              CXX='${CMAKE_CXX_COMPILER}' \
+              AR='${CMAKE_AR}' \
+              RANLIB='${CMAKE_RANLIB}' \
+              PKG_CONFIG='${PORTLIBS}/bin/arm-none-eabi-pkg-config' \
+              CFLAGS='${ARCH_STR}' \
+              CXXFLAGS='${ARCH_STR}' \
+              LDFLAGS='-L${PORTLIBS}/lib -lc -lgcc' \
+              SHARED_LIB=0 \
+              STATIC_LIB=1 \
+              TEST=0 \
+              EXAMPLES=0 \
+              OPENMPT123=0 \
+              NO_VORBIS=1 \
+              NO_VORBISFILE=1"
+        BUILD_IN_SOURCE 1
+        USES_TERMINAL_BUILD 1
+        INSTALL_COMMAND ""
+)
+
+set(LIBOPENMPT_ARCHIVE ${CMAKE_BINARY_DIR}/libopenmpt-ext/src/libopenmpt_build/bin/libopenmpt.a)
+
+add_library(libopenmpt STATIC IMPORTED GLOBAL)
+set_target_properties(libopenmpt PROPERTIES
+        IMPORTED_LOCATION "${LIBOPENMPT_ARCHIVE}"
+)
+
+# set up executable
 add_executable(ModPlayer3DS ${SOURCES} ${TEX_OUTPUTS})
 set_target_properties(ModPlayer3DS PROPERTIES
         CXX_STANDARD 23
@@ -60,11 +102,10 @@ set_target_properties(ModPlayer3DS PROPERTIES
         CXX_EXTENSIONS OFF
 )
 
-set(ARCH -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft)
-
-target_include_directories(ModPlayer3DS PRIVATE ${LIBCTRU}/include ${PORTLIBS}/include ./source ./include)
+target_include_directories(ModPlayer3DS PRIVATE ${LIBCTRU}/include ${PORTLIBS}/include "${CMAKE_SOURCE_DIR}/ext/libopenmpt" ./source)
 target_link_directories(ModPlayer3DS PRIVATE ${LIBCTRU}/lib ${PORTLIBS}/lib ./lib)
 target_link_libraries(ModPlayer3DS PRIVATE openmpt citro2d citro3d ctru m)
+add_dependencies(ModPlayer3DS libopenmpt_build)
 
 target_compile_options(ModPlayer3DS PRIVATE
         ${ARCH}
@@ -90,8 +131,7 @@ else()
     target_link_options(ModPlayer3DS PRIVATE -g3 -O0 -Wl,-Map,${TARGET}.map)
 endif()
 
-# Build the final rom
-
+# build rom
 add_custom_command(TARGET ModPlayer3DS POST_BUILD
         COMMAND smdhtool --create "${APP_TITLE}" "${APP_TITLE}" "${APP_AUTHOR}" "${APP_ICON}" ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh
         COMMAND 3dsxtool $<TARGET_FILE:ModPlayer3DS> ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.3dsx --smdh=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.smdh --romfs=${ROMFS}
